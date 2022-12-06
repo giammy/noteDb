@@ -31,9 +31,17 @@ debugLevel = 0
 # theUrl = "http://127.0.0.1:8000/note"
 # theUrl = "http://192.168.1.80/note"
 theUrlBase = "http://127.0.0.1:8000"
+# theUrlBase = "http://www3.rfx.local:8005"
 theUrlToken = theUrlBase + "/token/" # the url to get the JWT token
 theUrl = theUrlBase + "/note"
 
+def updateUrlBase(base):
+    global theUrl
+    global theUrlBase
+    global theUrlToken
+    theUrlBase = base
+    theUrlToken = theUrlBase + "/token/"
+    theUrl = theUrlBase + "/note"
 
 theUsername = ""
 thePassword = ""
@@ -109,6 +117,9 @@ def auxGetHeaders():
         theAuthorizationToken = getJWTToken(theUsername, thePassword)
         # print("token-refresh: %s" % (theAuthorizationToken['refresh']))
         # print("token-access: %s" % (theAuthorizationToken['access']))
+
+    if debugLevel > 0:
+        print(theAuthorizationToken)
 
     if 'access' in theAuthorizationToken.keys():
         return {'Authorization': 'Bearer ' + theAuthorizationToken['access']}
@@ -358,6 +369,8 @@ def groupRemove(groupName):
 
 def main():
     global theUrl
+    global theUrlBase
+    global theUrlToken
     global theUsername
     global thePassword
     global theAuthorizationToken
@@ -410,13 +423,14 @@ def main():
     args = parser.parse_args()
 
     # check if a username and password are provided by environment variables
-    theUrl = os.environ.get("NOTEDB_URL", theUrl)
+    updateUrlBase(os.environ.get("NOTEDB_URL", theUrlBase))
     theUsername = os.getenv("NOTEDB_USERNAME", theUsername)
     thePassword = os.getenv("NOTEDB_PASSWORD", thePassword)
 
     # if the flag is present, we need to set hostname, username, password
     if args.__dict__['host'] != None:        
-        theUrl = args.__dict__['host']
+        theUrlBase = args.__dict__['host']
+        updateUrlBase(theUrlBase)
     if args.__dict__['username'] != None:        
         theUsername = args.__dict__['username']
     if args.__dict__['password'] != None:        
@@ -429,8 +443,9 @@ def main():
     auxGetHeaders() 
     print("User %s connected on remote API host: %s" % (theUsername, theUrl))
 
-    if args.__dict__['gui'] != None:
+    if args.__dict__['gui']:
         guiManagement()
+        exit(0)
 
     for k, arg in args.__dict__.items():
         match k:
