@@ -13,9 +13,9 @@ import PySimpleGUI as sg
 import random
 import string
 
+from client_lib import *
 import client_input
 
-debugLevel = 0
 
 #
 # a command line interface to REST API of notes
@@ -28,25 +28,12 @@ debugLevel = 0
 # ./client.py --searchEntity '{"__ENT__":"STAFFMEMBER", "GROUPNAME":"Group2"}'
 # ./client.py --getEntity 6 
 
-# theUrl = "http://127.0.0.1:8000/note"
-# theUrl = "http://192.168.1.80/note"
-theUrlBase = "http://127.0.0.1:8000"
-# theUrlBase = "http://www3.rfx.local:8005"
-theUrlToken = theUrlBase + "/token/" # the url to get the JWT token
-theUrl = theUrlBase + "/note"
 
-def updateUrlBase(base):
-    global theUrl
-    global theUrlBase
-    global theUrlToken
-    theUrlBase = base
-    theUrlToken = theUrlBase + "/token/"
-    theUrl = theUrlBase + "/note"
+debugLevel = 0
 
-theUsername = ""
-thePassword = ""
-theAuthorizationToken = None
-
+theDefaultUrlBase = "http://www3.rfx.local:8005"
+#  "http://127.0.0.1:8000"
+#  "http://www3.rfx.local:8005"
 
 #
 # the following 2 functions create an example entity called STAFFMEMBER, 
@@ -82,127 +69,6 @@ def createDemoEntries(num, par2):
     print("Created %d entries in %s seconds" % (num, time.time() - startTime))
 
 #
-# general functions
-#
-
-def getCurrentDate():
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+0000")
-
-def printNote(note):
-    print(note)
-    # print("%i,%i,%i,%s,%s\n" % (note['id'],note['rid'],note['lid'],note['type'],note['data']))
-
-#
-# get JWT token
-# MITICO! tutta la funzione
-#
-def getJWTToken(username, password):
-    global theUrlToken
-    resp = requests.post(url=theUrlToken,
-                         # headers={"Content-Type": "application/json"}, 
-                         data={'username': username, 'password': password})
-    # print(theUrlToken)
-    # if resp.status_code != 200:
-    #     # print("Error: %s" % (resp.text))
-    #     return resp.text
-    # return resp.text
-    return json.loads(resp.text)
-
-def auxGetHeaders():
-    global theUrl
-    global theUsername
-    global thePassword
-    global theAuthorizationToken
-    if theAuthorizationToken is None:
-        theAuthorizationToken = getJWTToken(theUsername, thePassword)
-        # print("token-refresh: %s" % (theAuthorizationToken['refresh']))
-        # print("token-access: %s" % (theAuthorizationToken['access']))
-
-    if debugLevel > 0:
-        print(theAuthorizationToken)
-
-    if 'access' in theAuthorizationToken.keys():
-        return {'Authorization': 'Bearer ' + theAuthorizationToken['access']}
-
-    print("Error: %s" % (theAuthorizationToken))
-    sys.exit()
-
-def auxGetAndReturnList(url):
-    resp = requests.get(url=url, headers=auxGetHeaders())
-    if (resp.status_code == 200):
-        #print(resp.content)
-        #print(resp.json())
-        return resp.json()
-    else:
-        return []
-
-def getAllNotes():
-    return auxGetAndReturnList(theUrl)
-
-def getNote(id):
-    return auxGetAndReturnList(theUrl + "/?id=%s" % (id))
-
-def getNotesWithType(tagName):
-    return auxGetAndReturnList(theUrl + "/?type=%s" % (tagName))
-
-def getAttributesOfNote(id):
-    return auxGetAndReturnList(theUrl + "/?rid=%d" % (id))
-
-def getEntities(whichType):
-    return auxGetAndReturnList(theUrl + "/?type=%s&rid=0" % (whichType))
-
-# create a new note with a POST request
-def createNote(rid, type, data):
-    resp = requests.post(url=theUrl,
-                         headers=auxGetHeaders(), 
-                         json={"rid": rid, "lid": 0, "type": type, "data": data})
-    # print(resp.status_code)
-    if (resp.status_code == 200 or resp.status_code == 201 or resp.status_code == 202 or resp.status_code == 203):
-        return resp.json()['id']
-    else:
-        return -1
-
-# TODO
-def isEntityAttributeDuplicate(rid, type, data):
-    pass
-
-def addAttributeToEntity(entityId, type, data):
-    return createNote(rid=entityId, type=type, data=data)
-
-def createEntity(jsonInfo):
-    entityType = jsonInfo['__ENT__']
-    rid = createNote(rid=0, type=entityType, data="__ENT__")
-    for key in jsonInfo:
-        if (key != '__ENT__'):
-            createNote(rid=rid, type=key, data=jsonInfo[key])
-
-def checkType(thisType, noteList):
-    if len(noteList)<1:
-        return False
-    return noteList[0]['type'] == thisType
-
-def searchEntity(jsonInfo):
-    entityType = jsonInfo['__ENT__']
-    del jsonInfo['__ENT__']
-    firstKey = list(jsonInfo.keys())[0]
-    firstValue = jsonInfo[firstKey]
-    noteList = auxGetAndReturnList(theUrl + "/?type=%s&data=%s" % (firstKey, firstValue))
-    idList = list(map(lambda x: x['rid'], noteList))
-    resList = list(filter(lambda x: checkType(entityType, getNote(x)), idList))
-    return resList
-
-def getListOfAttributes(entityName):
-    entities = getEntities(entityName)
-    list = []
-    if len(entities) <= 0:
-        return list
-    # TODO get a merge of attributes of all entities
-    attr = getAttributesOfNote(entities[0]['id'])
-    for n in attr:
-        list.append(n['type']) 
-    return list
-
-#
 # Available operations
 #         
 
@@ -223,10 +89,6 @@ def initDb():
         return True
     else:
         return False
-
-def deleteNote(id):
-    resp = requests.delete(url=theUrl + "/" + str(id), headers=auxGetHeaders())
-    return(resp)
 
 def resetDb():
     noteList = getAllNotes()
@@ -423,25 +285,29 @@ def main():
     args = parser.parse_args()
 
     # check if a username and password are provided by environment variables
-    updateUrlBase(os.environ.get("NOTEDB_URL", theUrlBase))
-    theUsername = os.getenv("NOTEDB_USERNAME", theUsername)
-    thePassword = os.getenv("NOTEDB_PASSWORD", thePassword)
+    setUrlBase(os.environ.get("NOTEDB_URL", theDefaultUrlBase))
+    setUsername(os.getenv("NOTEDB_USERNAME", ""))
+    setPassword(os.getenv("NOTEDB_PASSWORD", ""))
 
     # if the flag is present, we need to set hostname, username, password
     if args.__dict__['host'] != None:        
         theUrlBase = args.__dict__['host']
-        updateUrlBase(theUrlBase)
+        setUrlBase(theUrlBase)
     if args.__dict__['username'] != None:        
-        theUsername = args.__dict__['username']
+        setUsername(args.__dict__['username'])
     if args.__dict__['password'] != None:        
-        thePassword = args.__dict__['password']
+        setPassword(args.__dict__['password'])
     if args.__dict__['debug'] != None:
         debugLevel = args.__dict__['debug']
+
+
+    
+
 
     # 
     # get the authorization token and store it for the following calls
     auxGetHeaders() 
-    print("User %s connected on remote API host: %s" % (theUsername, theUrl))
+    print("User %s connected on remote API host: %s" % (theConfiguration["theUsername"], theConfiguration["theUrl"]))
 
     if args.__dict__['gui']:
         guiManagement()
@@ -612,6 +478,7 @@ def addEntityAttributesWindow(title, listOfAttributes):
     window.close()
     
 def addEntityWindow():
+    global theUrl
     list = countEntities()
     entityList = []
     for e,n in list.items():
